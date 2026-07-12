@@ -1,40 +1,59 @@
 import cv2
 import numpy as np
 
+
 class ImageDrawer:
-    def __init__(self):
-        # self.points = [[0, 241], [100, 241], [160, 310], [0, 355]]
-        self.points = [[1533, 541], [1260, 500], [1260, 792], [1533 , 792 ]]
+    """Draw a relative restricted area and flag detections entering it."""
+
+    # Original polygon converted from a 1912 x 792 reference frame.
+    DEFAULT_POINTS = [
+        (1533 / 1912, 541 / 792),
+        (1260 / 1912, 500 / 792),
+        (1260 / 1912, 792 / 792),
+        (1533 / 1912, 792 / 792),
+    ]
+
+    def __init__(self, normalized_points=None):
+        self.normalized_points = normalized_points or self.DEFAULT_POINTS
+
+    def get_points(self, image):
+        height, width = image.shape[:2]
+        return [
+            (int(x * width), int(y * height))
+            for x, y in self.normalized_points
+        ]
 
     def draw_polygon(self, image):
-        w,h,c = image.shape
-        # print(w,h,c) 792 1912 3
-        points = np.array(self.points, np.int32)
-        points = points.reshape((-1, 1, 2))
-        cv2.polylines(image, [points], isClosed=True, color=(0, 0, 255), thickness=2)
+        points = np.array(self.get_points(image), dtype=np.int32).reshape((-1, 1, 2))
+        cv2.polylines(
+            image,
+            [points],
+            isClosed=True,
+            color=(0, 0, 255),
+            thickness=2,
+        )
         return image
 
     def draw_bounding_box(self, image, xmin, ymin, xmax, ymax):
-        # 判断四边形内是否有任意两个顶点在矩形框内
-        points_inside = [point for point in self.points if xmin <= point[0] <= xmax and ymin <= point[1] <= ymax]
-        if len(points_inside) >= 2:
+        """Warn when the bottom-center (feet) of a detection enters the area."""
+        points = np.array(self.get_points(image), dtype=np.int32)
+        foot_point = ((xmin + xmax) // 2, ymax)
+        is_intruding = cv2.pointPolygonTest(points, foot_point, False) >= 0
+
+        if is_intruding:
             cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
-            cv2.putText(image, 'Warning', (xmin, ymin - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            text_y = max(ymin - 10, 20)
+            cv2.putText(
+                image,
+                "Warning",
+                (xmin, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 0, 255),
+                2,
+            )
         return image
 
-    def is_inside_polygon(self, x, y):
-        # 判断点(x, y)是否在四边形内部
-        return cv2.pointPolygonTest(np.array(self.points, np.int32), (x, y), False) >= 0
-
-    def show_image(self, image):
-        cv2.imshow('Image with Annotations',image)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-if __name__ == "__main__":
-    # 创建ImageDrawer对象并使用示例
-    drawer = ImageDrawer()
-    img = cv2.imread("test.png")
-    img = drawer.draw_polygon(img)
-    img = drawer.draw_bounding_box(img, 50, 300, 80, 350)  # 示例输入xmin, ymin, xmax, ymax
-    drawer.show_image(img)
+    def is_inside_polygon(self, image, x, y):
+        points = np.array(self.get_points(image), dtype=np.int32)
+        return cv2.pointPolygonTest(points, (x, y), False) >= 0
