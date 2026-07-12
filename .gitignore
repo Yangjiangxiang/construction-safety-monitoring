@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Models and large artifacts
+*.pt
+*.pth
+*.onnx
+*.avi
+*.mp4
+
+# Generated output
+output/
+out/
+out.mp4/
+runs/
+test.png
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
