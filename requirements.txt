@@ -1,0 +1,13 @@
+# Install a PyTorch build appropriate for your OS/CUDA environment.
+torch
+torchvision
+opencv-python
+numpy
+Pillow
+loguru
+pandas
+requests
+PyYAML
+tqdm
+matplotlib
+scipy
