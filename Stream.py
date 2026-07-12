@@ -1,214 +1,202 @@
-# --time**2022.8.13
-# --** worker:CSDN大气层煮月亮
-# --** email:2642898145@qq.com
- 
-import cv2
-import time
- 
-# import torch
-import warnings
-import numpy as np
- 
-from PIL import Image
-from project_yolov7det import yolov7Pt_infer 
-from draw import ImageDrawer
-from loguru import logger
- 
-import os
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
- 
 import configparser
+import os
 import sys
-class VideoTracker(object):
-    def __init__(self, cam=-1, video_path='', save_path='', use_frame=[0, -1], display=True):
+import time
+
+import cv2
+from loguru import logger
+
+from draw import ImageDrawer
+from project_yolov7det import yolov7Pt_infer
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+
+
+class VideoTracker:
+    def __init__(
+        self,
+        cam=-1,
+        video_path="",
+        save_path="",
+        use_frame=(0, 1),
+        display=True,
+        frame_interval=1,
+    ):
         self.display = display
         self.use_frame = use_frame
         self.video_path = video_path
         self.cam = cam
+        self.save_path = save_path
+        self.frame_interval = max(1, int(frame_interval))
+
         if self.cam != -1:
-            print("Using webcam :" + str(self.cam))
+            logger.info("Using webcam: {}", self.cam)
             self.vdo = cv2.VideoCapture(self.cam)
         else:
-            print("Using video :" + str(self.video_path))
+            logger.info("Using video: {}", self.video_path)
             self.vdo = cv2.VideoCapture()
- 
-        self.save_path = save_path
-        self.frame_interval = 1
-        self.use_cuda = True
- 
-        #use_cuda = self.use_cuda and torch.cuda.is_available()
-        #if not use_cuda:
-            #warnings.warn("Running in cpu mode which maybe very slow!", UserWarning)
-        self.det = yolov7Pt_infer(*self.get_ptModel_config())
-        self.drawTool = ImageDrawer()
+
+        self.det = yolov7Pt_infer(*self.get_pt_model_config())
+        self.draw_tool = ImageDrawer()
 
     def __enter__(self):
         if self.cam != -1:
+            if not self.vdo.isOpened():
+                raise RuntimeError(f"Unable to open camera {self.cam}")
             ret, frame = self.vdo.read()
-            assert ret, "Error: Camera error"
-            self.im_width = frame.shape[0]
-            self.im_height = frame.shape[1]
-            self.count_frame = int(-1)
+            if not ret:
+                raise RuntimeError("Unable to read a frame from the camera")
+            self.im_height, self.im_width = frame.shape[:2]
+            self.count_frame = -1
         else:
-            assert os.path.isfile(self.video_path), "Path error"
+            if not os.path.isfile(self.video_path):
+                raise FileNotFoundError(
+                    f"Input video not found: {self.video_path}. "
+                    "Provide a valid file with --video."
+                )
             self.vdo.open(self.video_path)
+            if not self.vdo.isOpened():
+                raise RuntimeError(f"Unable to open video: {self.video_path}")
             self.im_width = int(self.vdo.get(cv2.CAP_PROP_FRAME_WIDTH))
             self.im_height = int(self.vdo.get(cv2.CAP_PROP_FRAME_HEIGHT))
             self.count_frame = int(self.vdo.get(cv2.CAP_PROP_FRAME_COUNT))
-            assert self.vdo.isOpened()
- 
-        if self.save_path != '':
+
+        if self.save_path:
             os.makedirs(self.save_path, exist_ok=True)
- 
-            # path of saved video and results
             self.save_video_path = os.path.join(self.save_path, "results.avi")
- 
-            # create video writer
-            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-            self.writer = cv2.VideoWriter(self.save_video_path, fourcc, 24, (self.im_width, self.im_height))
- 
-            # logging
-            logger.info("Save results to {}".format(self.save_path))
- 
+            fps = self.vdo.get(cv2.CAP_PROP_FPS)
+            if not fps or fps <= 0:
+                fps = 24
+            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+            self.writer = cv2.VideoWriter(
+                self.save_video_path,
+                fourcc,
+                fps,
+                (self.im_width, self.im_height),
+            )
+            if not self.writer.isOpened():
+                raise RuntimeError(f"Unable to create output video: {self.save_video_path}")
+            logger.info("Saving results to {}", self.save_video_path)
+
         return self
- 
+
     def __exit__(self, exc_type, exc_value, exc_traceback):
-        if exc_type:
-            print(exc_type, exc_value, exc_traceback)
- 
-        # 释放视频资源
-        if hasattr(self, 'vdo') and self.vdo.isOpened():
+        if hasattr(self, "vdo") and self.vdo.isOpened():
             self.vdo.release()
-            print("Video resource released.")
- 
-        # 释放视频写入器资源
-        if hasattr(self, 'writer'):
+        if hasattr(self, "writer"):
             self.writer.release()
-            print("Video writer resource released.")
- 
+        if self.display:
+            cv2.destroyAllWindows()
+        return False
+
     def run(self):
         idx_frame = 0
-        all_costTime = 0
- 
+        total_elapsed = 0.0
+
+        if self.count_frame > 0:
+            start_frame = int(self.count_frame * self.use_frame[0])
+            end_frame = int(self.count_frame * self.use_frame[1])
+        else:
+            start_frame = 0
+            end_frame = None
+
         while self.vdo.grab():
             idx_frame += 1
- 
-            start_iter_frame_id = int(self.count_frame * self.use_frame[0])
-            end_iter_frame_id = int(self.count_frame * self.use_frame[1])
-            # 展示用
-            self.show_count_frames = end_iter_frame_id
- 
+
             if idx_frame % self.frame_interval:
                 continue
-                
-            if idx_frame < start_iter_frame_id:
+            if idx_frame < start_frame:
                 continue
- 
-            if idx_frame > end_iter_frame_id:
+            if end_frame is not None and idx_frame > end_frame:
                 break
- 
-            start = time.time()
-            ref, ori_im = self.vdo.retrieve()
- 
-            if ref is True:
-                cv2.imwrite("test.png", ori_im)
-                # start your code from here
-                im0, source, preds = self.det.infer(ori_im.copy())
-                im0 = self.drawTool.draw_polygon(im0)
-                for xmin,ymin,xmax,ymax,score,cls in preds:
-                    xmin = int(xmin)
-                    ymin = int(ymin)
-                    xmax = int(xmax)
-                    ymax = int(ymax)
-                    im0 = self.drawTool.draw_bounding_box(im0, xmin, ymin, xmax, ymax)
-                # -----------end-----------
-                if self.display:
-                    cv2.imshow("frame", im0)
-                    if cv2.waitKey(1) & 0xFF == ord('q'):
-                        break
- 
-                if self.save_path:
-                    self.writer.write(im0)
- 
-                # logging
-                end = time.time() - start if time.time() - start != 0 else 1
-                all_costTime += end - start
-                if self.display:
-                    if self.cam != -1:
-                        logger.info("frame schedule:<{}/-1> ({:.2f} ms), fps: {:.03f}"
-                                .format(idx_frame, end - start, 1 / (end - start)))
-                    else:
-                        logger.info("frame schedule:<{}/{}> ({:.2f} ms), fps: {:.03f}"
-                                .format(idx_frame, self.show_count_frames , end - start, 1 / (end - start)))
-                else:
-                    self.print_progress_bar(idx_frame, self.show_count_frames, prefix='Progress:', suffix='Complete', length=50)
- 
-        logger.info("ALL_COST_TIME:{:.3f}s".format(all_costTime))
- 
-    def print_progress_bar(self, iteration, total, prefix='', suffix='', length=50, fill='█'):
-        """
-        Args:
-        iteration (int): 当前迭代次数
-        total (int): 总迭代次数
-        prefix (str): 进度条前缀文本
-        suffix (str): 进度条后缀文本
-        length (int): 进度条长度
-        fill (str): 用于填充进度条的字符
-        """
-        percent = ("{0:.1f}").format(100 * (iteration / float(total)))
-        filled_length = int(length * iteration // total)
-        bar = fill * filled_length + '-' * (length - filled_length)
-        sys.stdout.write('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix))
+
+            started_at = time.perf_counter()
+            retrieved, original = self.vdo.retrieve()
+            if not retrieved:
+                continue
+
+            annotated, _, predictions = self.det.infer(original.copy())
+            annotated = self.draw_tool.draw_polygon(annotated)
+
+            for xmin, ymin, xmax, ymax, score, class_id in predictions:
+                annotated = self.draw_tool.draw_bounding_box(
+                    annotated,
+                    int(xmin),
+                    int(ymin),
+                    int(xmax),
+                    int(ymax),
+                )
+
+            if self.display:
+                cv2.imshow("Construction Safety Monitoring", annotated)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+
+            if hasattr(self, "writer"):
+                self.writer.write(annotated)
+
+            elapsed = max(time.perf_counter() - started_at, 1e-9)
+            total_elapsed += elapsed
+            fps = 1 / elapsed
+
+            if self.display:
+                total_label = end_frame if end_frame is not None else "live"
+                logger.info(
+                    "Frame {}/{}: {:.2f} ms, FPS {:.2f}",
+                    idx_frame,
+                    total_label,
+                    elapsed * 1000,
+                    fps,
+                )
+            elif end_frame:
+                self.print_progress_bar(idx_frame, end_frame)
+
+        logger.info("Total inference time: {:.3f} s", total_elapsed)
+
+    @staticmethod
+    def print_progress_bar(iteration, total, length=50):
+        if total <= 0:
+            return
+        ratio = min(max(iteration / total, 0), 1)
+        filled_length = int(length * ratio)
+        bar = "█" * filled_length + "-" * (length - filled_length)
+        sys.stdout.write(f"\rProgress: |{bar}| {ratio * 100:.1f}% Complete")
         sys.stdout.flush()
- 
-    def pil_to_cv2(self, pil_image):
-        """
-        Convert a PIL Image to an OpenCV image (NumPy array).
-        Args:
-        pil_image (PIL.Image): The image in PIL format.
-        Returns:
-        numpy.ndarray: The image in OpenCV format.
-        """
-        # Convert the PIL image to a NumPy array
-        pil_image_np = np.array(pil_image)
-        # Convert RGB to BGR
-        cv2_image = cv2.cvtColor(pil_image_np, cv2.COLOR_RGB2BGR)
-        return cv2_image
-    
-    def cv2_to_pil(self, cv2_image):
-        """
-        Convert an OpenCV image (NumPy array) to a PIL Image.
-        Args:
-        cv2_image (numpy.ndarray): The image in OpenCV format.
-        Returns:
-        PIL.Image: The image in PIL format.
-        """
-        # OpenCV uses BGR by default, whereas PIL uses RGB, so we need to convert the image
-        cv2_image_rgb = cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB)
-        # Convert the NumPy array to a PIL image
-        pil_image = Image.fromarray(cv2_image_rgb)
-        return pil_image
 
-    def get_ptModel_config(self):
+    @staticmethod
+    def get_pt_model_config():
         config = configparser.ConfigParser()
+        config_path = os.path.join(os.path.dirname(__file__), "config.ini")
+        if not config.read(config_path, encoding="utf-8"):
+            raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
-        # 读取 config.ini 文件
-        config.read('config.ini',encoding='utf-8')
+        section = config["config"]
+        weights = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), section.get("weights"))
+        )
+        if not os.path.isfile(weights):
+            raise FileNotFoundError(
+                f"Model weights not found: {weights}. See README.md for setup."
+            )
 
-        # 获取 [config] 部分的内容
-        weights = config.get('config', 'weights')
-        imgsz = config.getint('config', 'imgsz')
-        conf_thres = config.getfloat('config', 'conf_thres')
-        iou_thres = config.getfloat('config', 'iou_thres')
-        device = config.get('config', 'device')
-        save_conf = config.getboolean('config', 'save_conf')
-        nosave = config.getboolean('config', 'nosave')
-        classes_str = config.get('config', 'classes')
-        classes = None if classes_str.lower() == 'none' else [int(x) for x in classes_str.split(' ')]
-        agnostic_nms = config.getboolean('config', 'agnostic_nms')
-        augment = config.getboolean('config', 'augment')
-        update = config.getboolean('config', 'update')
-        no_trace = config.getboolean('config', 'no_trace')
-        
-        return (weights, imgsz, conf_thres, iou_thres, device, save_conf, nosave, classes, agnostic_nms, augment, update, no_trace)
-    
+        classes_text = section.get("classes", "None")
+        classes = (
+            None
+            if classes_text.lower() == "none"
+            else [int(value) for value in classes_text.split()]
+        )
+
+        return (
+            weights,
+            section.getint("imgsz"),
+            section.getfloat("conf_thres"),
+            section.getfloat("iou_thres"),
+            section.get("device"),
+            section.getboolean("save_conf"),
+            section.getboolean("nosave"),
+            classes,
+            section.getboolean("agnostic_nms"),
+            section.getboolean("augment"),
+            section.getboolean("update"),
+            section.getboolean("no_trace"),
+        )
