@@ -111,8 +111,7 @@ The default restricted area is defined as relative coordinates in `draw.py`, so 
 This repository is distributed under the GNU General Public License v3.0 or later. See [LICENSE](LICENSE).
 
 - YOLOv7 inference portions are based on the [official YOLOv7 project](https://github.com/WongKinYiu/yolov7), which is licensed under GPL-3.0.
-- Earlier video-processing code carried an attribution to the CSDN user “大气层煮月亮”; that historical attribution is preserved in [THIRD_PARTY_NOTICES.md].
-- The 2026 integration, restricted-area warning logic, normalized ROI calibration, command-line interface, configuration improvements and documentation were modified by Yangjiangxiang.
+
 
 The Yangjiangxiang copyright statement applies only to original modifications and does not replace ownership of incorporated third-party code.
 
