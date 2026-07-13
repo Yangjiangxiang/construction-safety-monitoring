@@ -21,6 +21,9 @@ class VideoTracker:
         use_frame=(0, 1),
         display=True,
         frame_interval=1,
+        weights_path=None,
+        restricted_area_points=None,
+        allowed_class_ids=None,
     ):
         self.display = display
         self.use_frame = use_frame
@@ -28,6 +31,10 @@ class VideoTracker:
         self.cam = cam
         self.save_path = save_path
         self.frame_interval = max(1, int(frame_interval))
+        self.weights_path = weights_path
+        self.allowed_class_ids = (
+            None if allowed_class_ids is None else set(allowed_class_ids)
+        )
 
         if self.cam != -1:
             logger.info("Using webcam: {}", self.cam)
@@ -36,8 +43,8 @@ class VideoTracker:
             logger.info("Using video: {}", self.video_path)
             self.vdo = cv2.VideoCapture()
 
-        self.det = yolov7Pt_infer(*self.get_pt_model_config())
-        self.draw_tool = ImageDrawer()
+        self.det = yolov7Pt_infer(*self.get_pt_model_config(self.weights_path))
+        self.draw_tool = ImageDrawer(restricted_area_points)
 
     def __enter__(self):
         if self.cam != -1:
@@ -119,6 +126,11 @@ class VideoTracker:
             annotated = self.draw_tool.draw_polygon(annotated)
 
             for xmin, ymin, xmax, ymax, score, class_id in predictions:
+                if (
+                    self.allowed_class_ids is not None
+                    and int(class_id) not in self.allowed_class_ids
+                ):
+                    continue
                 annotated = self.draw_tool.draw_bounding_box(
                     annotated,
                     int(xmin),
@@ -164,16 +176,20 @@ class VideoTracker:
         sys.stdout.flush()
 
     @staticmethod
-    def get_pt_model_config():
+    def get_pt_model_config(weights_override=None):
         config = configparser.ConfigParser()
         config_path = os.path.join(os.path.dirname(__file__), "config.ini")
         if not config.read(config_path, encoding="utf-8"):
             raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
         section = config["config"]
-        weights = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), section.get("weights"))
-        )
+        configured_weights = weights_override or section.get("weights")
+        if os.path.isabs(configured_weights):
+            weights = os.path.normpath(configured_weights)
+        else:
+            weights = os.path.normpath(
+                os.path.join(os.path.dirname(__file__), configured_weights)
+            )
         if not os.path.isfile(weights):
             raise FileNotFoundError(
                 f"Model weights not found: {weights}. See README.md for setup."
