@@ -1,3 +1,11 @@
+# Construction Safety Monitoring
+# Copyright (C) 2026 Yangjiangxiang (modifications and project integration)
+# Portions are based on YOLOv7 and an earlier third-party example.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# This modified file is distributed without warranty. See LICENSE and
+# THIRD_PARTY_NOTICES.md for license terms and attribution.
+
 import configparser
 import os
 import sys
