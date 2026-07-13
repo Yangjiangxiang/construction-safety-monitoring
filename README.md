@@ -29,7 +29,13 @@ Place the model at:
 project_yolov7det/weights/pt/best.pt
 ```
 
-The expected location can be changed in `config.ini`.
+The expected location can be changed in `config.ini`, or supplied at runtime:
+
+```powershell
+python main.py --video "input.mp4" --weights "D:\\models\\best.pt"
+```
+
+Large weights and demonstration videos can be stored in Google Drive, but download or sync them locally before execution. The program intentionally does not silently download executable PyTorch weights.
 
 > Only load model files from a source you trust. PyTorch weight files can contain executable serialized content.
 
@@ -52,6 +58,15 @@ PyTorch installation depends on the operating system and CUDA version. If the co
 
 ## Usage
 
+Calibrate the restricted area for a video or camera first:
+
+```powershell
+python calibrate_roi.py --video "path\\to\\input.mp4" --output roi.json
+python calibrate_roi.py --camera 0 --output camera-0-roi.json
+```
+
+Left-click to add polygon points, right-click to undo, and press Enter to save. Coordinates are stored as normalized values and scale with the video resolution.
+
 Process a video:
 
 ```powershell
@@ -61,7 +76,7 @@ python main.py --video "path\to\input.mp4" --output output
 Use webcam 0:
 
 ```powershell
-python main.py --camera 0 --output output
+python main.py --camera 0 --roi camera-0-roi.json --class-id 0 --output output
 ```
 
 Process without opening a preview window:
@@ -87,9 +102,9 @@ The default restricted area is defined as relative coordinates in `draw.py`, so 
 ## Limitations
 
 - Model weights and demonstration videos must be supplied separately.
-- Restricted-area coordinates must be calibrated for each camera angle.
+- Run `calibrate_roi.py` once for each camera angle and keep its ROI JSON with that camera configuration.
 - Detection quality depends on the training data, lighting, occlusion and camera placement.
-- The current warning logic applies to every returned detection. Configure the model classes when only person detections should be considered.
+- Warning classes are configurable with repeatable `--class-id` options; the default is class ID 0. Verify the correct person-class ID for your trained model.
 
 ## Attribution
 
