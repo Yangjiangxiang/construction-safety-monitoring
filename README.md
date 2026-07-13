@@ -112,9 +112,6 @@ This repository is distributed under the GNU General Public License v3.0 or late
 
 - YOLOv7 inference portions are based on the [official YOLOv7 project](https://github.com/WongKinYiu/yolov7), which is licensed under GPL-3.0.
 
-
-The Yangjiangxiang copyright statement applies only to original modifications and does not replace ownership of incorporated third-party code.
-
 ## Privacy and safety
 
 Do not use this project as the only safety control on a construction site. Follow applicable privacy, workplace-monitoring and occupational-safety requirements.
