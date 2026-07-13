@@ -2,6 +2,7 @@ import argparse
 import json
 
 import cv2
+import numpy as np
 
 
 def parse_args():
@@ -50,7 +51,7 @@ def main():
             if len(points) >= 2:
                 cv2.polylines(
                     preview,
-                    [__import__("numpy").array(points, dtype="int32")],
+                    [np.array(points, dtype=np.int32)],
                     len(points) >= 3,
                     (0, 0, 255),
                     2,
