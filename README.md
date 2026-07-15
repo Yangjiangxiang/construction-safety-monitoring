@@ -9,6 +9,9 @@ A YOLOv7-based construction-site monitoring project for safety detection and res
 - Resolution-independent restricted-area overlay
 - Intrusion warning based on the bottom-center point of each detection
 - Annotated video export
+- Stable tracking IDs with lightweight centroid tracking
+- Enter, exit and lost-in-zone event records in CSV format
+- Automatic event snapshots
 - CPU or CUDA device configuration
 
 ## Project structure
@@ -16,6 +19,9 @@ A YOLOv7-based construction-site monitoring project for safety detection and res
 - `main.py` — command-line entry point
 - `Stream.py` — video capture, inference and output pipeline
 - `draw.py` — restricted-area drawing and intrusion checks
+- `tracking.py` — tracking IDs and CSV event recording
+- `make_demo.py` — generates a GitHub GIF and preview image
+- `MODEL_CARD.md` — verified classes and evaluation reporting
 - `config.ini` — model and inference settings
 - `project_yolov7det/` — YOLOv7 inference implementation
 
@@ -38,6 +44,14 @@ python main.py --video "input.mp4" --weights "D:\\models\\best.pt"
 Large weights and demonstration videos can be stored in Google Drive, but download or sync them locally before execution. The program intentionally does not silently download executable PyTorch weights.
 
 > Only load model files from a source you trust. PyTorch weight files can contain executable serialized content.
+
+### Publishing the weight file
+
+1. Upload `best.pt` to Google Drive.
+2. Set sharing to “Anyone with the link — Viewer”.
+3. Copy the share link into the **Weight download** row in [MODEL_CARD.md](MODEL_CARD.md).
+4. Publish the SHA-256 checksum beside the link so users can verify the file.
+5. Keep the file out of Git because it exceeds GitHub's 100 MB limit.
 
 ## Installation
 
@@ -85,7 +99,34 @@ Process without opening a preview window:
 python main.py --video "path\to\input.mp4" --no-display
 ```
 
-Press `q` to stop the preview. The annotated result is saved as `output/results.avi`.
+Press `q` to stop the preview. Generated files:
+
+- `output/results.avi` — annotated video
+- `output/events.csv` — enter, exit and lost-in-zone events
+- `output/events/*.jpg` — snapshots captured on entry
+
+Each CSV row includes UTC time, video time, frame number, tracking ID, class ID, confidence, bounding box and snapshot path.
+
+Tracking can be tuned when people move quickly or detections briefly disappear:
+
+```powershell
+python main.py --video "input.mp4" --tracker-distance 120 --tracker-missed 30
+```
+
+### Generate GitHub demonstration media
+
+After processing a video:
+
+```powershell
+python make_demo.py --input output/results.avi --gif assets/demo.gif --preview assets/preview.jpg
+```
+
+Review the generated files for privacy before committing them. Then add them to this README:
+
+```markdown
+![Detection preview](assets/preview.jpg)
+![Tracking demonstration](assets/demo.gif)
+```
 
 ## Configuration
 
@@ -98,6 +139,19 @@ Important values in `config.ini`:
 - `device`: `cpu` or a CUDA device such as `0`
 
 The default restricted area is defined as relative coordinates in `draw.py`, so it scales to the input resolution. Adjust `ImageDrawer.DEFAULT_POINTS` for a different camera view.
+
+## Model classes and quantitative performance
+
+See [MODEL_CARD.md](MODEL_CARD.md). The repository currently does not contain the checkpoint's verified class-name file or test-set evaluation output, so class names and mAP values are deliberately marked as unreported rather than guessed.
+
+Before presenting this project, update the model card with:
+
+- Exact class ID order used during training
+- Precision and recall
+- mAP@0.5 and mAP@0.5:0.95
+- Test-set size and class distribution
+- Hardware and measured FPS
+- Representative successful and failed detections
 
 ## Limitations
 
