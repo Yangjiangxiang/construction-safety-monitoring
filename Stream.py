@@ -16,6 +16,7 @@ from loguru import logger
 
 from draw import ImageDrawer
 from project_yolov7det import yolov7Pt_infer
+from tracking import CentroidTracker, EventRecorder
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
@@ -32,6 +33,8 @@ class VideoTracker:
         weights_path=None,
         restricted_area_points=None,
         allowed_class_ids=None,
+        tracker_max_distance=100,
+        tracker_max_missed=20,
     ):
         self.display = display
         self.use_frame = use_frame
@@ -43,6 +46,11 @@ class VideoTracker:
         self.allowed_class_ids = (
             None if allowed_class_ids is None else set(allowed_class_ids)
         )
+        self.tracker = CentroidTracker(
+            max_distance=tracker_max_distance,
+            max_missed=tracker_max_missed,
+        )
+        self.event_recorder = None
 
         if self.cam != -1:
             logger.info("Using webcam: {}", self.cam)
@@ -76,17 +84,19 @@ class VideoTracker:
             self.im_height = int(self.vdo.get(cv2.CAP_PROP_FRAME_HEIGHT))
             self.count_frame = int(self.vdo.get(cv2.CAP_PROP_FRAME_COUNT))
 
+        self.source_fps = self.vdo.get(cv2.CAP_PROP_FPS)
+        if not self.source_fps or self.source_fps <= 0:
+            self.source_fps = 24
+
         if self.save_path:
             os.makedirs(self.save_path, exist_ok=True)
+            self.event_recorder = EventRecorder(self.save_path)
             self.save_video_path = os.path.join(self.save_path, "results.avi")
-            fps = self.vdo.get(cv2.CAP_PROP_FPS)
-            if not fps or fps <= 0:
-                fps = 24
             fourcc = cv2.VideoWriter_fourcc(*"MJPG")
             self.writer = cv2.VideoWriter(
                 self.save_video_path,
                 fourcc,
-                fps,
+                self.source_fps,
                 (self.im_width, self.im_height),
             )
             if not self.writer.isOpened():
@@ -133,19 +143,70 @@ class VideoTracker:
             annotated, _, predictions = self.det.infer(original.copy())
             annotated = self.draw_tool.draw_polygon(annotated)
 
-            for xmin, ymin, xmax, ymax, score, class_id in predictions:
+            filtered = [
+                detection
+                for detection in predictions
                 if (
-                    self.allowed_class_ids is not None
-                    and int(class_id) not in self.allowed_class_ids
-                ):
-                    continue
-                annotated = self.draw_tool.draw_bounding_box(
-                    annotated,
-                    int(xmin),
-                    int(ymin),
-                    int(xmax),
-                    int(ymax),
+                    self.allowed_class_ids is None
+                    or int(detection[5]) in self.allowed_class_ids
                 )
+            ]
+            tracks, removed_tracks = self.tracker.update(filtered)
+            video_time = idx_frame / self.source_fps
+
+            for track in removed_tracks:
+                if track.inside and self.event_recorder:
+                    self.event_recorder.record(
+                        track,
+                        "lost_in_zone",
+                        idx_frame,
+                        video_time,
+                    )
+
+            for track in tracks:
+                xmin, ymin, xmax, ymax = track.bbox
+                foot_x = (xmin + xmax) // 2
+                foot_y = ymax
+                is_inside = self.draw_tool.is_inside_polygon(
+                    annotated,
+                    foot_x,
+                    foot_y,
+                )
+
+                event = None
+                if is_inside and not track.inside:
+                    event = "enter"
+                elif not is_inside and track.inside:
+                    event = "exit"
+                track.inside = is_inside
+
+                annotated = self.draw_tool.draw_tracked_box(
+                    annotated,
+                    track.bbox,
+                    track.track_id,
+                    track.class_id,
+                    track.confidence,
+                    is_inside,
+                )
+
+                if event and self.event_recorder:
+                    snapshot = ""
+                    if event == "enter":
+                        snapshot_name = (
+                            f"frame_{idx_frame:08d}_track_{track.track_id}.jpg"
+                        )
+                        snapshot = os.path.join("events", snapshot_name)
+                        cv2.imwrite(
+                            os.path.join(self.save_path, snapshot),
+                            annotated,
+                        )
+                    self.event_recorder.record(
+                        track,
+                        event,
+                        idx_frame,
+                        video_time,
+                        snapshot,
+                    )
 
             if self.display:
                 cv2.imshow("Construction Safety Monitoring", annotated)
