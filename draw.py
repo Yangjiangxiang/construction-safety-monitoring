@@ -34,24 +34,24 @@ class ImageDrawer:
         )
         return image
 
-    def draw_bounding_box(self, image, xmin, ymin, xmax, ymax):
-        """Warn when the bottom-center (feet) of a detection enters the area."""
-        points = np.array(self.get_points(image), dtype=np.int32)
-        foot_point = ((xmin + xmax) // 2, ymax)
-        is_intruding = cv2.pointPolygonTest(points, foot_point, False) >= 0
-
-        if is_intruding:
-            cv2.rectangle(image, (xmin, ymin), (xmax, ymax), (0, 0, 255), 2)
-            text_y = max(ymin - 10, 20)
-            cv2.putText(
-                image,
-                "Warning",
-                (xmin, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                (0, 0, 255),
-                2,
-            )
+    def draw_tracked_box(self, image, bbox, track_id, class_id, score, intruding):
+        xmin, ymin, xmax, ymax = bbox
+        color = (0, 0, 255) if intruding else (0, 200, 0)
+        label = (
+            f"ID {track_id} | class {class_id} | {score:.2f}"
+            + (" | WARNING" if intruding else "")
+        )
+        cv2.rectangle(image, (xmin, ymin), (xmax, ymax), color, 2)
+        text_y = max(ymin - 10, 20)
+        cv2.putText(
+            image,
+            label,
+            (xmin, text_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            color,
+            2,
+        )
         return image
 
     def is_inside_polygon(self, image, x, y):
