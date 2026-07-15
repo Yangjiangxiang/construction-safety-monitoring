@@ -46,6 +46,18 @@ def parse_args():
     )
     parser.add_argument("--no-display", action="store_true")
     parser.add_argument("--frame-interval", type=int, default=1)
+    parser.add_argument(
+        "--tracker-distance",
+        type=float,
+        default=100,
+        help="Maximum centroid matching distance in pixels",
+    )
+    parser.add_argument(
+        "--tracker-missed",
+        type=int,
+        default=20,
+        help="Frames a missing track is retained",
+    )
     return parser.parse_args()
 
 
@@ -63,6 +75,8 @@ def main():
         weights_path=args.weights,
         restricted_area_points=load_roi(args.roi),
         allowed_class_ids=class_ids,
+        tracker_max_distance=args.tracker_distance,
+        tracker_max_missed=args.tracker_missed,
     ) as tracker:
         tracker.run()
 
